@@ -1,0 +1,9 @@
+{
+  "name": "miniprogram-to-vue",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "MIT",
+  "devDependencies": {
+    "fs-extra": "^9.0.1"
+  }
+}
