@@ -1,9 +1,11 @@
 const fs = require('fs')
 const fse = require('fs-extra')
+const cheerio = require('cheerio')
 
 const sourceDic = 'D:/work/JianYou/client'
 const root = __dirname + '/../'
 const dist = root + '/dist'
+
 
 init()
 
@@ -121,13 +123,228 @@ function parseStyle (str) {
 }
 
 function parseHtml (html) {
-  return html
+  html = '<div>' + html + '</div>'
+  const $ = cheerio.load(html, { decodeEntities: false })
+
+  var $dom = $.root().find('div')
+  parseEachHtml($, $dom)
+  return $.root().find('body').html()
 }
+
+function parseEachHtml ($, $dom) {
+  const dom = $dom.get(0)
+  if (dom.tagName === 'view') {
+    dom.tagName = 'div'
+  }
+  if (dom.tagName === 'text') {
+    dom.tagName = 'span'
+  }
+
+  const attrs = getAllAttributes(dom)
+//  console.log(attrs)
+  attrs.forEach((elem) => {
+    if (elem.name === 'wx:else') {
+      $dom.removeAttr(elem.name)
+      $dom.attr('v-else', '')
+      return
+    }
+
+    if (elem.name === 'wx:key') {
+      $dom.removeAttr(elem.name)
+      $dom.attr('v-bind:key', 'item.' + elem.value)
+      return
+    }
+
+    if (elem.name === 'class') {
+      const classObj = handleAndGetClass(elem.value)
+      if (classObj.static) {
+        $dom.attr('class', classObj.static)
+      }
+
+      if (classObj.dynamic) {
+        $dom.attr('v-bind:class', classObj.dynamic)
+      }
+
+      return
+    }
+
+    // style的解析暂时没实现
+    if (elem.name === 'style') {
+      return
+    }
+    const val = attrvalHandle(elem.value)
+    if (elem.name === 'wx:if') {
+      $dom.removeAttr(elem.name)
+      $dom.attr('v-if', val)
+      return
+    }
+
+    if (elem.name === 'bindtap') {
+      $dom.removeAttr(elem.name)
+      $dom.attr('v-on:click', val)
+      return
+    }
+
+    if (elem.name === 'wx:for') {
+      $dom.removeAttr('wx:for')
+      let elemName = 'item'
+      if ($dom.attr('wx:for-item')) {
+        elemName = $dom.attr('wx:for-item')
+        $dom.removeAttr('wx:for-item')
+      }
+
+      let elemIndex = 'index'
+      if ($dom.attr('wx:for-index')) {
+        elemIndex = $dom.attr('wx:for-index')
+        $dom.removeAttr('wx:for-index')
+      }
+      $dom.attr('v-for', '(' + elemName + ', ' + elemIndex + ') in ' + val)
+
+      return
+    }
+
+    if (elem.value.indexOf('{{') > -1) {
+      $dom.removeAttr(elem.name)
+      $dom.attr('v-bind:' + elem.name, val)
+    } else {
+      $dom.attr(elem.name, val)
+    }
+
+  })
+
+  $dom.children().each((index, item) => {
+    const $item = $(item)
+    parseEachHtml($, $item)
+  })
+}
+
+function handleAndGetClass (str) {
+  if (str.indexOf('{{') === -1) {
+    return {
+      static: str,
+    }
+  }
+  str = str.replace(/'/g, '')
+  let classStr = "{"
+  handle()
+  function handle () {
+    const startIndex = str.indexOf("{{")
+    const endIndex = str.indexOf("}}")
+
+    let selected = str.substring(startIndex, endIndex + 2)
+    str = str.replace(selected, '')
+
+    selected = selected.replace(/^{{|}}$/g, '').trim()
+
+    if (selected.indexOf('?') > -1 && selected.indexOf(':') > -1) {
+      const selectedArr = selected.split(/\?|:/).map((item) => {
+        return item.trim()
+      })
+
+      if (selectedArr[1] != "") {
+        setToClassStr(selectedArr[1], selectedArr[0])
+      }
+      if (selectedArr[2] != "") {
+        setToClassStr(selectedArr[2], '!' + selectedArr[0])
+      }
+    }
+    if (str.indexOf('{{') > -1) {
+      handle()
+    }
+  }
+
+  function setToClassStr (key, val) {
+    if (key.indexOf(' ') > -1) {
+      key.split(' ').forEach((keyItem) => {
+        classStr += "'" + keyItem + "': " + val + ','
+      })
+    } else {
+      classStr += "'" + key + "': " + val + ','
+    }
+  }
+
+  return {
+    static: str.trim(),
+    dynamic: classStr.replace(/,$/, '') + '}',
+  }
+}
+
+function attrvalHandle (val) {
+  if (!val) {
+    return ''
+  }
+
+  const startTokenIndex = val.indexOf('{{')
+  const endTokenIndex = val.indexOf('}}')
+
+  if (startTokenIndex === -1 && endTokenIndex === -1) {
+    return val
+  }
+
+  if (val.startsWith('{{') && val.endsWith('}}')) {
+    return val.replace(/^{{|}}$/g, '').trim()
+  }
+
+
+
+  if (startTokenIndex > -1 && endTokenIndex > -1 && startTokenIndex < endTokenIndex) {
+    return parseHtmlAttrTextWithToken(val)
+  }
+}
+
+function parseHtmlAttrTextWithToken (str) {
+  function handle (str) {
+    const startIndex = str.indexOf('{{')
+    if (startIndex === 0) {
+      str = str.replace("{{", "")
+    } else {
+      str = str.replace("{{", "' + ")
+    }
+
+    const endIndex = str.indexOf('}}') + 2
+    if (endIndex == str.length) {
+      str = str.replace("}}", "")
+    } else {
+      str = str.replace("}}", " + '")
+    }
+
+    if (str.indexOf('}}') > -1 && str.indexOf('{{') > -1) {
+      return handle(str)
+    }
+    return str
+  }
+
+  let noStart = true
+  if (str.startsWith('{{')) {
+    noStart = false
+  }
+  let noEnd = true
+  if (str.endsWith('}}')) {
+    noEnd = false
+  }
+  let parsedStr = handle(str)
+  if (noStart) {
+    parsedStr = "'" + parsedStr
+  }
+  if (noEnd) {
+    parsedStr += "'"
+  }
+
+  return parsedStr
+}
+
+function getAllAttributes (node) {
+  return node.attributes || Object.keys(node.attribs).map(
+    name => ({ name, value: node.attribs[name] })
+  )
+}
+
+
 
 function parseScript (script, pageStr) {
   const pageArr = pageStr.split('/')
   function handleRequire (path) {
-    fse.copy(`${ sourceDic }/${ pageStr }/../${ path }`, `${ dist }/src/views/${ pageArr[1] }/${pageArr[2]}.vue/../${path}`)
+//    fse.copy(`${ sourceDic }/${ pageStr }/../${ path }`, `${ dist }/src/views/${ pageArr[1] }/${pageArr[2]}.vue/../${path}`)
   }
 
   function handleScript (obj) {
@@ -144,28 +361,32 @@ function parseScript (script, pageStr) {
       onShow () {
 
       },
+      methods () {
+        let methodsStr = '{'
+        Object.keys(obj).forEach((key) => {
+          if (hookHandle[key]) {
+            return
+          }
+
+          let contentStr = obj[key].toString()
+          if (contentStr.startsWith(key)) {
+            contentStr = contentStr.replace(key, 'function')
+          }
+          methodsStr += `${key}: ${ contentStr },`
+        })
+
+        methodsStr += '},'
+        return methodsStr
+      },
     }
 
-    let methodsStr = '{'
-    Object.keys(obj).forEach((key) => {
-      if (hookHandle[key]) {
-        return
-      }
 
-      let contentStr = obj[key].toString()
-      if (contentStr.startsWith(key)) {
-        contentStr = contentStr.replace(key, 'function')
-      }
-      methodsStr += `${key}: ${ contentStr },`
-    })
-
-    methodsStr += '},'
     return `
        export default {
          data () {
            return ${ hookHandle.data(obj) }
          },
-         methods: ${ methodsStr }
+         methods: ${ hookHandle.methods() }
        }
      `
   }
@@ -174,17 +395,17 @@ function parseScript (script, pageStr) {
     function Page (obj) {
       return handleScript(obj)
     }
-    
+
     function getApp () {
       return {
         globalData: '',
       }
     }
-    
+
     function require (path) {
       handleRequire(path)
     }
-    
+
   `
 
   return eval(script + scriptHandlerStr)
