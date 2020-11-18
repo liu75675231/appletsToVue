@@ -2,31 +2,38 @@ const fs = require('fs')
 const fse = require('fs-extra')
 const cheerio = require('cheerio')
 
-const CompileJs = require('./compile-js')
+const CompileJs = require('./compile-js') // 这个类库主要用于把小程序的js文本，转换为vue中script能认的js文本
 
-const sourceDic = 'D:/demo/wx-trans-demo'
-const root = __dirname + '/../'
-const dist = root + '/dist'
+const sourceDic = 'D:/demo/wx-trans-demo'  // 源目录，就是小程序的根目录
+const root = __dirname + '/../'      // 当前生成器的根目录
+const dist = root + '/dist'   // 当前生成器项目的dist目录，此文件夹存放dist生成好的vue-cli项目
 
 CompileJs.init(sourceDic, dist)
 
+// 主执行文件，用于启动转换
 init()
 
 async function init () {
+  // 当使用 yarn index.js --clean-dist清除dist文件夹下生成的内容
   if (process.argv.indexOf('--clean-dist') > -1) {
     await fse.emptyDir(dist)
     console.log('clean dist finished')
   }
 
+  // 把vue-cli下的文件复制到dist中，而dist就是转换后的vue项目
   if (!fs.existsSync(dist + '/package.json')) {
     console.log('copy vue-cli structure to dist...')
     await fse.copy(root + '/vue-cli/basic', dist)
     console.log('copy vue-cli structure to dist finished')
   }
 
+  // 解析app.json文件
   const appConf = JSON.parse(fs.readFileSync(sourceDic + '/app.json', 'utf8'))
 
+  // 吧小程序中的app.js中的代码转换为vue可识别的js代码，并存到/src/wx-app.js中
   fs.writeFileSync(dist + '/src/wx-app.js', CompileJs.parseAppJs(fs.readFileSync(sourceDic + '/app.js', 'utf8')))
+
+  // 解析路由，并把解析好的路由保存到src/router/index.js中，并迭代其中每个路由项，并以此生成对应的vue文件
   parseRouter(appConf)
 
   // fs.writeFileSync(dist + '/index.html', getHtmlTemplate(appConf))
@@ -37,6 +44,7 @@ function parseRouter (appConf) {
 
   const list = [];
   try {
+    // 遍历app.json中的pages，并吧其中每个路由地址对应的小程序代码都生成对应的src/views/目录下的vue文件
     appConf.pages.forEach(async (pageStr) => {
       const routerNameArr = pageStr.split('/')
 
@@ -45,6 +53,7 @@ function parseRouter (appConf) {
           fs.mkdirSync(dicPath)
         }
 
+        // 生成vue文件,并存到src/views目录下
         fs.writeFileSync(`${ dicPath }/${ routerNameArr[2] }.vue`, await generateVueHtml(pageStr))
 
         const jsonFile = JSON.parse(fs.readFileSync(`${ sourceDic }/${ pageStr }.json`, 'utf8'))
