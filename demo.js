@@ -1,24 +1,15 @@
-let str = "fix-bottom-btn btn-blue  {{'margin-top:'+ navHeight+'px'}} {{'margin-bottom:'+ navHeight+'px'}}"
+const target = {
+  message1: "hello",
+  message2: "everyone"
+};
 
-str = str.replace(/'/g, '')
-let classStr = "{"
-handle()
-function handle () {
-  const startIndex = str.indexOf("{{")
-  const endIndex = str.indexOf("}}")
-
-  let selected = str.substring(startIndex, endIndex + 2)
-  str = str.replace(selected, '')
-
-  selected = selected.replace(/^{{|}}$/g, '').trim()
-  console.log(selected)
-  if (str.indexOf('{{') > -1) {
-    handle()
+const handler2 = {
+  get: function(target, prop, receiver) {
+    console.log('exec')
+    return "world";
   }
-}
+};
 
+const proxy2 = new Proxy(target, handler2);
 
-//classStr = classStr.replace(/,$/, '') + '}'
-
-//console.log(classStr)
-//console.log(str)
+console.log(target.message1)

@@ -2,17 +2,21 @@ const fs = require('fs')
 const fse = require('fs-extra')
 const cheerio = require('cheerio')
 
-const sourceDic = 'D:/work/JianYou/client'
+const CompileJs = require('./compile-js')
+
+const sourceDic = 'D:/demo/wx-trans-demo'
 const root = __dirname + '/../'
 const dist = root + '/dist'
 
+CompileJs.init(sourceDic, dist)
 
 init()
 
 async function init () {
-
-//    await fse.emptyDir(dist)
-//   console.log('clean dist finished')
+  if (process.argv.indexOf('--clean-dist') > -1) {
+    await fse.emptyDir(dist)
+    console.log('clean dist finished')
+  }
 
   if (!fs.existsSync(dist + '/package.json')) {
     console.log('copy vue-cli structure to dist...')
@@ -20,10 +24,9 @@ async function init () {
     console.log('copy vue-cli structure to dist finished')
   }
 
-  await fse.copy(sourceDic + '/img', dist + '/src/assets')
-  console.log('copy img files into dist finished')
   const appConf = JSON.parse(fs.readFileSync(sourceDic + '/app.json', 'utf8'))
 
+  fs.writeFileSync(dist + '/src/wx-app.js', CompileJs.parseAppJs(fs.readFileSync(sourceDic + '/app.js', 'utf8')))
   parseRouter(appConf)
 
   // fs.writeFileSync(dist + '/index.html', getHtmlTemplate(appConf))
@@ -74,7 +77,7 @@ async function generateVueHtml (pageStr) {
       </template>
 
       <script>
-        ${ parseScript(await fs.readFileSync(sourceDic + '/' + pageStr + '.js', 'utf8'), pageStr) }
+        ${ CompileJs.parsePageJs(await fs.readFileSync(sourceDic + '/' + pageStr + '.js', 'utf8'), pageStr) }
       </script>
 
       <style>
@@ -90,12 +93,8 @@ async function generateVueHtml (pageStr) {
 function generateRouter (routerList) {
   let routerStr = ''
   routerList.forEach((item) => {
-    routerStr += JSON.stringify({
-      path: '/' + item.path,
-      component: `() => import('../views/${ item.path }')`
-    }) + ','
+    routerStr += '{path:"/' + item.path.replace(/.vue$/, '') + '", component: () => import("../views/' + item.path + '")},'
   })
-
 
   return `
     import Vue from 'vue'
@@ -133,6 +132,9 @@ function parseHtml (html) {
 
 function parseEachHtml ($, $dom) {
   const dom = $dom.get(0)
+  if (dom.tagName === 'block') {
+    dom.tagName = 'template'
+  }
   if (dom.tagName === 'view') {
     dom.tagName = 'div'
   }
@@ -344,7 +346,11 @@ function getAllAttributes (node) {
 function parseScript (script, pageStr) {
   const pageArr = pageStr.split('/')
   function handleRequire (path) {
-//    fse.copy(`${ sourceDic }/${ pageStr }/../${ path }`, `${ dist }/src/views/${ pageArr[1] }/${pageArr[2]}.vue/../${path}`)
+    try {
+      fse.copySync(`${ sourceDic }/${ pageStr }/../${ path }`, `${ dist }/src/views/${ pageArr[1] }/${pageArr[2]}.vue/../${path}`)
+    } catch (e) {
+    }
+
   }
 
   function handleScript (obj) {
@@ -391,8 +397,15 @@ function parseScript (script, pageStr) {
      `
   }
 
+  const wx = {
+    canIUse () {
+      return false
+    }
+  }
+
   const scriptHandlerStr = `
     function Page (obj) {
+     
       return handleScript(obj)
     }
 
@@ -405,19 +418,10 @@ function parseScript (script, pageStr) {
     function require (path) {
       handleRequire(path)
     }
-
   `
 
   return eval(script + scriptHandlerStr)
 
-
-  // return `
-  //   export default {
-  //     data () {
-  //       return ${ JSON.stringify(scriptObj.data) }
-  //     }
-  //   }
-  // `
 }
 
 
