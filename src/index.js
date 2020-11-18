@@ -67,6 +67,7 @@ function parseRouter (appConf) {
 
     })
 
+    // 生成路由文件，并放到src/router/index.js中
     setTimeout(() => {
       fs.writeFileSync(`${ dist }/src/router/index.js`, generateRouter(list))
     },0)
